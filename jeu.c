@@ -174,10 +174,13 @@ Noeud * nouveauNoeud (Noeud * parent, Coup * coup ) {
         noeud->joueur = AUTRE_JOUEUR(parent->joueur);
     }
     else {
+
         noeud->etat = NULL;
         noeud->coup = NULL;
         noeud->joueur = 0;
     }
+    for (int i = 0;i<LARGEUR_MAX;i++)
+         noeud->enfants[i] = NULL;
     noeud->parent = parent;
     noeud->nb_enfants = 0;
 
@@ -282,7 +285,6 @@ FinDePartie simuler(Etat * etat) {
             free(coups[i]);
         }
         free(coups);
-        //free(meilleur_coup);
     }
     return fin;
 }
@@ -291,10 +293,16 @@ FinDePartie simuler(Etat * etat) {
 // et retourne le nombre de partie gagner par le joueur qui joue l'état
 float simulation(int nb_simulation,Noeud * noeud){
     float nb_victoire = 0;
+    FinDePartie joueur_etudie;
+    if(noeud->joueur == 1){
+        joueur_etudie = ORDI_GAGNE;
+    }
+    else
+        joueur_etudie = HUMAIN_GAGNE;
 
     for(int i = 0;i<nb_simulation;i++){
         Etat * copie = copieEtat(noeud->etat);
-        if (simuler(copie)== ORDI_GAGNE){
+        if (simuler(copie)== joueur_etudie){
             nb_victoire++;
         }
         free(copie);
@@ -303,20 +311,50 @@ float simulation(int nb_simulation,Noeud * noeud){
 }
 
 Noeud * selectionner_noeud (Noeud * parent){
-
-    for (int i =0 ;i<LARGEUR_MAX-1;i++){
+    float B;
+    float maximum = 0;
+    Noeud * meilleur_enfant;
+    for (int i =0 ;i<LARGEUR_MAX;i++){
+        printf("debut  %i \n",i);
         if(parent->enfants[i] == NULL){
-            return parent->enfants[i];
+            printf("null\n");
+                parent->enfants[i] = ajouterEnfant(parent, nouveauCoup(i));
+                return parent->enfants[i];
         }
         else {
+            printf("non null\n");
+            afficheJeu(parent->enfants[i]->etat);
+            printf("fin %i\n",parent->enfants[i]->nb_simus);
+            B = (parent->enfants[i]->nb_victoires / parent->enfants[i]->nb_simus) +
+                1.414 * (sqrt(log(parent->nb_simus) / parent->enfants[i]->nb_simus));
+            if(B>maximum){
+                maximum = B;
+                meilleur_enfant =  parent->enfants[i];
+            }
 
-            //printf("%i\n",parent->enfants[i]->nb_victoires);
-            /*maximum = (parent->enfants[i]->nb_victoires / parent->enfants[i]->nb_simus) +
-                      1.414 * (sqrt(log(parent->nb_simus) / parent->enfants[i]->nb_simus))*/;
         }
     }
-    return parent;
+    return selectionner_noeud(meilleur_enfant);
+}
 
+
+void mise_a_jour(Noeud * racine,Noeud * choisi,FinDePartie fin){
+    while(choisi != racine){
+        choisi->nb_simus++;
+        choisi = choisi->parent;
+    }
+}
+
+Coup * attendue(Noeud * noeud){
+    int enfant = 0;
+    int max = 0;
+    for( int i =0; i <noeud->nb_enfants;i++){
+        if ( max <= noeud->enfants[i]->nb_victoires/noeud->enfants[i]->nb_simus){
+            max = noeud->enfants[i]->nb_victoires/noeud->enfants[i]->nb_simus;
+            enfant = i;
+        }
+    }
+    return noeud->enfants[enfant]->coup;
 }
 // Calcule et joue un coup de l'ordinateur avec MCTS-UCT
 // en tempsmax secondes
@@ -326,67 +364,37 @@ void ordijoue_mcts(Etat * etat, int tempsmax) {
     tic = clock();
     int temps;
 
-    Coup ** coups;
-    Coup * meilleur_coup ;
-
     // Créer l'arbre de recherche
     Noeud * racine = nouveauNoeud(NULL, NULL);
     racine->etat = copieEtat(etat);
 
-    // créer les premiers noeuds:
-    coups = coups_possibles(racine->etat);
-    int k = 0;
-    Noeud * enfant;
-    while ( coups[k] != NULL) {
-        enfant = ajouterEnfant(racine, coups[k]);
-        k++;
-    }
 
-    int random =  rand()%k ;
-    meilleur_coup = coups[ random ]; // choix aléatoire
-    printf("colonne %i\n",random);
-
-    //selectionner_noeud(racine);
-    tic = clock();
-    printf("%f\n",simulation(1000,racine));
-    toc = clock();
-    printf("temps %f\n",( ((double) (toc - tic)) / CLOCKS_PER_SEC ));
-
-
-    simuler(etat);
-    afficheJeu(etat);
-
-    /*TODO :
-      - supprimer la sélection aléatoire du meilleur coup ci-dessus
-      - implémenter l'algorithme MCTS-UCT pour déterminer le meilleur coup ci-dessous*/
-
-    /*int iter = 0;
+    int iter = 0;
 
     do {
+        printf("%i\n",iter);
+        Noeud * n = selectionner_noeud(racine);
+        printf("selection\n",iter);
 
-        // selectionner
+        Etat * copie = copieEtat(racine->etat);
+        printf("copie\n",iter);
 
-
-
-
-        // à compléter par l'algorithme MCTS-UCT...
-
-
-
+        mise_a_jour(racine,n, simuler(copie));
+        printf("mise a jour\n",iter);
 
         toc = clock();
         temps = (int)( ((double) (toc - tic)) / CLOCKS_PER_SEC );
         iter ++;
-    } while ( temps < tempsmax );*/
+    } while ( iter <15);/*temps < tempsmax );*/
 
+    printf("nb iteration : %i\n",iter);
     /* fin de l'algorithme*/
 
     // Jouer le meilleur premier coup
-    //jouerCoup(etat, meilleur_coup );
+    jouerCoup(etat, attendue(racine));
 
     // Penser à libérer la mémoire :
     freeNoeud(racine);
-    free (coups);
 }
 
 int main(void) {
