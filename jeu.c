@@ -13,7 +13,7 @@
 // Paramètres du jeu
 #define LARGEUR_MAX 8		// nb max de fils pour un noeud (= nb max de coups possibles)
 
-#define TEMPS 5		// temps de calcul pour un coup avec MCTS (en secondes)
+#define TEMPS 15		// temps de calcul pour un coup avec MCTS (en secondes)
 
 // macros
 #define AUTRE_JOUEUR(i) (1-(i))
@@ -313,34 +313,38 @@ float simulation(int nb_simulation,Noeud * noeud){
 Noeud * selectionner_noeud (Noeud * parent){
     float B;
     float maximum = 0;
-    Noeud * meilleur_enfant;
+    int enfant  = 0;
     for (int i =0 ;i<LARGEUR_MAX;i++){
-        printf("debut  %i \n",i);
         if(parent->enfants[i] == NULL){
-            printf("null\n");
                 parent->enfants[i] = ajouterEnfant(parent, nouveauCoup(i));
                 return parent->enfants[i];
         }
         else {
-            printf("non null\n");
-            afficheJeu(parent->enfants[i]->etat);
-            printf("fin %i\n",parent->enfants[i]->nb_simus);
+	  //printf("non null\n");
+	  //afficheJeu(parent->enfants[i]->etat);
+            //printf("fin %i\n",parent->enfants[i]->nb_simus);
             B = (parent->enfants[i]->nb_victoires / parent->enfants[i]->nb_simus) +
                 1.414 * (sqrt(log(parent->nb_simus) / parent->enfants[i]->nb_simus));
             if(B>maximum){
                 maximum = B;
-                meilleur_enfant =  parent->enfants[i];
+                enfant = i;
             }
 
         }
     }
-    return selectionner_noeud(meilleur_enfant);
+    //afficheJeu(meilleur_enfant->etat);
+    return selectionner_noeud(parent->enfants[enfant]);
 }
 
 
 void mise_a_jour(Noeud * racine,Noeud * choisi,FinDePartie fin){
+  if (fin == ORDI_GAGNE){
+  }
     while(choisi != racine){
         choisi->nb_simus++;
+	if (fin == ORDI_GAGNE){
+	  choisi->nb_victoires++;
+	}
         choisi = choisi->parent;
     }
 }
@@ -372,20 +376,17 @@ void ordijoue_mcts(Etat * etat, int tempsmax) {
     int iter = 0;
 
     do {
-        printf("%i\n",iter);
         Noeud * n = selectionner_noeud(racine);
-        printf("selection\n",iter);
+   
 
         Etat * copie = copieEtat(racine->etat);
-        printf("copie\n",iter);
 
         mise_a_jour(racine,n, simuler(copie));
-        printf("mise a jour\n",iter);
 
         toc = clock();
         temps = (int)( ((double) (toc - tic)) / CLOCKS_PER_SEC );
         iter ++;
-    } while ( iter <15);/*temps < tempsmax );*/
+    } while (temps < tempsmax );
 
     printf("nb iteration : %i\n",iter);
     /* fin de l'algorithme*/
