@@ -9,11 +9,10 @@
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
+#include <float.h>
 
-// Paramètres du jeu
-#define LARGEUR_MAX 7        // nb max de fils pour un noeud (= nb max de coups possibles)
 
-#define TEMPS 15        // temps de calcul pour un coup avec MCTS (en secondes)
+#define TEMPS 30       // temps de calcul pour un coup avec MCTS (en secondes)
 
 // macros
 #define AUTRE_JOUEUR(i) (1-(i))
@@ -34,8 +33,6 @@ typedef struct EtatSt {
 
     int joueur; // à qui de jouer ?
 
-    // TODO: à compléter par la définition de l'état du jeu
-
     /* par exemple, pour morpion: */
     char plateau[NBLIG][NBCOL];
 
@@ -52,7 +49,6 @@ Etat *copieEtat(Etat *src) {
     Etat *etat = (Etat *) malloc(sizeof(Etat));
     etat->joueur = src->joueur;
 
-    // TODO: à compléter avec la copie de l'état src dans etat
 
     int i, j;
     for (i = 0; i < NBLIG; i++)
@@ -131,7 +127,7 @@ int jouerCoup(Etat *etat, Coup *coup) {
 // (tableau de pointeurs de coups se terminant par NULL)
 Coup **coups_possibles(Etat *etat) {
 
-    Coup **coups = (Coup **) malloc((LARGEUR_MAX) * sizeof(Coup *));
+    Coup **coups = (Coup **) malloc((NBCOL+1) * sizeof(Coup *));
 
     int k = 0;
 
@@ -156,7 +152,7 @@ typedef struct NoeudSt {
     Etat *etat; // etat du jeu
 
     struct NoeudSt *parent;
-    struct NoeudSt *enfants[LARGEUR_MAX]; // liste d'enfants : chaque enfant correspond à un coup possible
+    struct NoeudSt *enfants[NBCOL]; // liste d'enfants : chaque enfant correspond à un coup possible
     int nb_enfants;    // nb d'enfants présents dans la liste
 
     int nb_victoires;
@@ -180,7 +176,7 @@ Noeud *nouveauNoeud(Noeud *parent, Coup *coup) {
         noeud->coup = NULL;
         noeud->joueur = 0;
     }
-    for (int i = 0; i < LARGEUR_MAX; i++)
+    for (int i = 0; i < NBCOL; i++)
         noeud->enfants[i] = NULL;
     noeud->parent = parent;
     noeud->nb_enfants = 0;
@@ -286,14 +282,9 @@ FinDePartie simuler(Etat *etat) {
         jouerCoup(etat, meilleur_coup);
         fin = testFin(etat);
 
-        printf("%i\n",k);
         for (int i = 0; i < k; i++) {
-            printf("%i\n",coups[i]->colonne);
             free(coups[i]);
-            printf("%i\n",i);
         }
-        printf("%i\n",k);
-
         free(coups);
 
     }
@@ -322,9 +313,9 @@ float simulation(int nb_simulation, Noeud *noeud) {
 
 Noeud *selectionner_noeud(Noeud *parent) {
     float B;
-    double maximum = INT_MIN;
+    float maximum = FLT_MIN;
     int enfant = 0;
-    for (int i = 0; i < LARGEUR_MAX; i++) {
+    for (int i = 0; i < NBCOL; i++) {
         if (parent->enfants[i] == NULL) {
             parent->enfants[i] = ajouterEnfant(parent, nouveauCoup(i));
             return parent->enfants[i];
@@ -332,12 +323,18 @@ Noeud *selectionner_noeud(Noeud *parent) {
             //printf("non null\n");
             //afficheJeu(parent->enfants[i]->etat);
             //printf("fin %i\n",parent->enfants[i]->nb_simus);
-            if (parent->joueur == 1)
-                B = (parent->enfants[i]->nb_victoires / parent->enfants[i]->nb_simus) +
-                    1.414 * (sqrt(log(parent->nb_simus) / parent->enfants[i]->nb_simus));
-            else
-                B = -((parent->enfants[i]->nb_victoires / parent->enfants[i]->nb_simus) +
+
+            //si c'est le tour du joueur on souhaite prévoir le meilleur cas
+            if (parent->joueur == 0) {
+                B = ((float) parent->enfants[i]->nb_victoires / parent->enfants[i]->nb_simus) +
+                    1.414 * (sqrt(log((double) parent->nb_simus) / parent->enfants[i]->nb_simus));
+            }
+
+            // si c'est le tour de l'ordinateur on souhaite prévoir le pire cas
+            else {
+                B = -(((float) parent->enfants[i]->nb_victoires / parent->enfants[i]->nb_simus) +
                       1.414 * (sqrt(log(parent->nb_simus) / parent->enfants[i]->nb_simus)));
+            }
             if (B > maximum) {
                 maximum = B;
                 enfant = i;
@@ -345,35 +342,38 @@ Noeud *selectionner_noeud(Noeud *parent) {
 
         }
     }
-    //afficheJeu(meilleur_enfant->etat);
+
     return selectionner_noeud(parent->enfants[enfant]);
 }
 
 
 void mise_a_jour(Noeud *racine, Noeud *choisi, FinDePartie fin) {
-    printf("test\n");
     while (choisi != racine) {
-        printf("test\n");
         choisi->nb_simus++;
         if (fin == ORDI_GAGNE) {
             choisi->nb_victoires++;
         }
         choisi = choisi->parent;
     }
+    choisi->nb_simus++;
+    if (fin == ORDI_GAGNE) {
+        choisi->nb_victoires++;
+    }
+
 }
 
-Coup *attendue(Noeud *noeud) {
+Coup *meilleur_coup(Noeud *noeud) {
     int enfant = 0;
-    int max = 0;
+    float max = 0;
     for (int i = 0; i < noeud->nb_enfants; i++) {
-        /*printf("enfant %i victoire %i simus %i\n", i, noeud->enfants[i]->nb_victoires, noeud->enfants[i]->nb_simus);
-        afficheJeu(noeud->enfants[i]->etat);*/
-        if (max <= noeud->enfants[i]->nb_victoires / noeud->enfants[i]->nb_simus) {
-            max = noeud->enfants[i]->nb_victoires / noeud->enfants[i]->nb_simus;
+        printf("enfant %i taux victoire %0.3f simus %i\n", i, (float)noeud->enfants[i]->nb_victoires/noeud->enfants[i]->nb_simus, noeud->enfants[i]->nb_simus);
+        afficheJeu(noeud->enfants[i]->etat);
+        if (max < (float)noeud->enfants[i]->nb_victoires / noeud->enfants[i]->nb_simus) {
+            max = (float)noeud->enfants[i]->nb_victoires / noeud->enfants[i]->nb_simus;
             enfant = i;
         }
     }
-
+    printf("taux de vistoire :%0.3f",max);
     return noeud->enfants[enfant]->coup;
 }
 
@@ -391,12 +391,10 @@ void ordijoue_mcts(Etat *etat, int tempsmax) {
 
 
     int iter = 0;
-    simuler(racine->etat);
-    afficheJeu(racine->etat);
 
     do {
         Noeud *n = selectionner_noeud(racine);
-        afficheJeu(n->etat);
+        //afficheJeu(n->etat);
 
         Etat *copie = copieEtat(racine->etat);
 
@@ -406,14 +404,13 @@ void ordijoue_mcts(Etat *etat, int tempsmax) {
         toc = clock();
         temps = (int) (((double) (toc - tic)) / CLOCKS_PER_SEC);
         iter++;
-    } while (iter < 1);//temps < tempsmax);
+    } while (iter <2000000);//temps < tempsmax);
 
     printf("nb iteration : %i\n", iter);
-    //printf("nb simus %i\n", racine->nb_simus);
-    /* fin de l'algorithme*/
 
     // Jouer le meilleur premier coup
-    jouerCoup(etat, attendue(racine));
+    jouerCoup(etat, meilleur_coup(racine));
+
 
     // Penser à libérer la mémoire :
     freeNoeud(racine);
