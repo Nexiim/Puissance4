@@ -12,7 +12,7 @@
 #include <float.h>
 
 
-#define TEMPS 30       // temps de calcul pour un coup avec MCTS (en secondes)
+#define TEMPS 15      // temps de calcul pour un coup avec MCTS (en secondes)
 
 // macros
 #define AUTRE_JOUEUR(i) (1-(i))
@@ -130,12 +130,13 @@ Coup **coups_possibles(Etat *etat) {
     Coup **coups = (Coup **) malloc((NBCOL+1) * sizeof(Coup *));
 
     int k = 0;
-
     for (int i = 0; i < NBCOL; i++) {
         if (etat->plateau[0][i] == ' ') {
             coups[k] = nouveauCoup(i);
             k++;
         }
+        else
+            coups[k] = NULL;
     }
 
     coups[k] = NULL;
@@ -174,7 +175,7 @@ Noeud *nouveauNoeud(Noeud *parent, Coup *coup) {
 
         noeud->etat = NULL;
         noeud->coup = NULL;
-        noeud->joueur = 0;
+        noeud->joueur = 1;
     }
     for (int i = 0; i < NBCOL; i++)
         noeud->enfants[i] = NULL;
@@ -227,14 +228,14 @@ FinDePartie testFin(Etat *etat) {
                 k = 0;
                 while (k < PUISSANCE && i + k < NBLIG && etat->plateau[i + k][j] == etat->plateau[i][j])
                     k++;
-                if (k == PUISSANCE)
+                if (k >= PUISSANCE)
                     return etat->plateau[i][j] == 'O' ? ORDI_GAGNE : HUMAIN_GAGNE;
 
                 // colonnes
                 k = 0;
-                while (k < PUISSANCE && j + k < NBCOL && etat->plateau[i][j + k] == etat->plateau[i][j])
+                while (k <= PUISSANCE && j + k < NBCOL && etat->plateau[i][j + k] == etat->plateau[i][j])
                     k++;
-                if (k == PUISSANCE)
+                if (k >= PUISSANCE)
                     return etat->plateau[i][j] == 'O' ? ORDI_GAGNE : HUMAIN_GAGNE;
 
                 // diagonales
@@ -276,9 +277,18 @@ FinDePartie simuler(Etat *etat) {
         while (coups[k] != NULL) {
             k++;
         }
-
+        // choix aléatoire
         random = rand() % k;
-        meilleur_coup = coups[random]; // choix aléatoire
+        meilleur_coup = coups[random];
+
+        /*for(int i =0; i < k; i++){
+            Etat * copie = copieEtat(etat);
+            jouerCoup(copie, coups[i]);
+            if (testFin(copie) != NON){
+                meilleur_coup = coups[i];
+            }
+            free(copie);
+        }*/
         jouerCoup(etat, meilleur_coup);
         fin = testFin(etat);
 
@@ -295,15 +305,10 @@ FinDePartie simuler(Etat *etat) {
 // et retourne le nombre de partie gagner par le joueur qui joue l'état
 float simulation(int nb_simulation, Noeud *noeud) {
     float nb_victoire = 0;
-    FinDePartie joueur_etudie;
-    if (noeud->joueur == 1) {
-        joueur_etudie = ORDI_GAGNE;
-    } else
-        joueur_etudie = HUMAIN_GAGNE;
 
     for (int i = 0; i < nb_simulation; i++) {
         Etat *copie = copieEtat(noeud->etat);
-        if (simuler(copie) == joueur_etudie) {
+        if (simuler(copie) == ORDI_GAGNE) {
             nb_victoire++;
         }
         free(copie);
@@ -315,17 +320,21 @@ Noeud *selectionner_noeud(Noeud *parent) {
     float B;
     float maximum = FLT_MIN;
     int enfant = 0;
+    if (testFin(parent->etat) != NON){
+        return parent;
+    }
     for (int i = 0; i < NBCOL; i++) {
         if (parent->enfants[i] == NULL) {
             parent->enfants[i] = ajouterEnfant(parent, nouveauCoup(i));
             return parent->enfants[i];
-        } else {
+        }
+        else {
             //printf("non null\n");
             //afficheJeu(parent->enfants[i]->etat);
             //printf("fin %i\n",parent->enfants[i]->nb_simus);
 
             //si c'est le tour du joueur on souhaite prévoir le meilleur cas
-            if (parent->joueur == 0) {
+            if (parent->joueur == 1) {
                 B = ((float) parent->enfants[i]->nb_victoires / parent->enfants[i]->nb_simus) +
                     1.414 * (sqrt(log((double) parent->nb_simus) / parent->enfants[i]->nb_simus));
             }
@@ -389,6 +398,21 @@ void ordijoue_mcts(Etat *etat, int tempsmax) {
     Noeud *racine = nouveauNoeud(NULL, NULL);
     racine->etat = copieEtat(etat);
 
+   racine->etat->plateau[5][0] = 'X';
+   racine->etat->plateau[4][0] = 'X';
+   racine->etat->plateau[3][0] = 'X';
+   //racine->etat->plateau[5][3] = ' ';
+
+    if (testFin(racine->etat) == ORDI_GAGNE)
+        printf("ordi gagne\n");
+    else if (testFin(racine->etat) == HUMAIN_GAGNE)
+        printf("humain gagne\n");
+    else if (testFin(racine->etat) == MATCHNUL)
+        printf("match null\n");
+    else
+        printf("jeu non terminé\n");
+
+    //printf ("%0.3f\n",simulation(100000,racine));
 
     int iter = 0;
 
@@ -396,7 +420,7 @@ void ordijoue_mcts(Etat *etat, int tempsmax) {
         Noeud *n = selectionner_noeud(racine);
         //afficheJeu(n->etat);
 
-        Etat *copie = copieEtat(racine->etat);
+        Etat *copie = copieEtat(n->etat);
 
         mise_a_jour(racine, n, simuler(copie));
 
@@ -404,8 +428,11 @@ void ordijoue_mcts(Etat *etat, int tempsmax) {
         toc = clock();
         temps = (int) (((double) (toc - tic)) / CLOCKS_PER_SEC);
         iter++;
-    } while (iter <2000000);//temps < tempsmax);
+    } while (temps < tempsmax);
+    //afficheJeu(racine->enfants[3]->enfants[0]->etat);
 
+
+    printf("nb iteration : %i\n", racine->nb_simus);
     printf("nb iteration : %i\n", iter);
 
     // Jouer le meilleur premier coup
