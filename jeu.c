@@ -114,11 +114,13 @@ Coup *demanderCoup() {
 // retourne 0 si le coup n'est pas possible
 int jouerCoup(Etat *etat, Coup *coup) {
 
-    for (int i = NBLIG - 1; i >= 0; i--) {
-        if (etat->plateau[i][coup->colonne] == ' ') {
-            etat->plateau[i][coup->colonne] = etat->joueur ? 'O' : 'X';
-            etat->joueur = AUTRE_JOUEUR(etat->joueur);
-            return 1;
+    if (coup != NULL) {
+        for (int i = NBLIG - 1; i >= 0; i--) {
+            if (etat->plateau[i][coup->colonne] == ' ') {
+                etat->plateau[i][coup->colonne] = etat->joueur ? 'O' : 'X';
+                etat->joueur = AUTRE_JOUEUR(etat->joueur);
+                return 1;
+            }
         }
     }
     return 0;
@@ -128,18 +130,14 @@ int jouerCoup(Etat *etat, Coup *coup) {
 // (tableau de pointeurs de coups se terminant par NULL)
 Coup **coups_possibles(Etat *etat) {
 
-    Coup **coups = (Coup **) malloc((NBCOL + 1) * sizeof(Coup *));
+    Coup **coups = (Coup **) malloc((NBCOL) * sizeof(Coup *));
 
-    int k = 0;
     for (int i = 0; i < NBCOL; i++) {
         if (etat->plateau[0][i] == ' ') {
-            coups[k] = nouveauCoup(i);
-            k++;
+            coups[i] = nouveauCoup(i);
         } else
-            coups[k] = NULL;
+            coups[i] = NULL;
     }
-
-    coups[k] = NULL;
 
     return coups;
 }
@@ -213,9 +211,11 @@ void freeNoeud(Noeud *noeud) {
     if (noeud->etat != NULL)
         free(noeud->etat);
 
-    while (noeud->nb_enfants > 0) {
-        freeNoeud(noeud->enfants[noeud->nb_enfants - 1]);
-        noeud->nb_enfants--;
+    for (int i = 0; i < NBCOL; i++) {
+        if (noeud->enfants[i] != NULL) {
+            freeNoeud(noeud->enfants[i]);
+            noeud->nb_enfants--;
+        }
     }
     if (noeud->coup != NULL)
         free(noeud->coup);
@@ -281,29 +281,23 @@ FinDePartie simuler(Etat *etat) {
     Coup *meilleur_coup;
     int k, random;
 
+
     while (fin == NON) {
         coups = coups_possibles(etat);
-        k = 0;
-        while (coups[k] != NULL) {
-            k++;
-        }
-        // choix aléatoire
-        random = rand() % k;
-        meilleur_coup = coups[random];
 
-        /*for(int i =0; i < k; i++){
-            Etat * copie = copieEtat(etat);
-            jouerCoup(copie, coups[i]);
-            if (testFin(copie) != NON){
-                meilleur_coup = coups[i];
-            }
-            free(copie);
-        }*/
+        // choix aléatoire
+        do {
+            random = rand() % NBCOL;
+        } while (coups[random] == NULL);
+
+        meilleur_coup = coups[random];
         jouerCoup(etat, meilleur_coup);
         fin = testFin(etat);
 
-        for (int i = 0; i < k; i++) {
-            free(coups[i]);
+        for (int i = 0; i < NBCOL; i++) {
+            if (coups[i] != NULL) {
+                free(coups[i]);
+            }
         }
         free(coups);
 
@@ -327,46 +321,53 @@ float simulation(int nb_simulation, Noeud *noeud) {
 }
 
 Noeud *selectionner_noeud(Noeud *parent) {
+
     float B;
-    float maximum = FLT_MIN;
-    int enfant = 0;
+    float maximum = -FLT_MAX;
+    Noeud *enfant = parent->enfants[0];
+
     if (testFin(parent->etat) != NON || parent->nb_enfants != nb_coup_possibles(parent->etat)) {
         return parent;
     }
+
     for (int i = 0; i < NBCOL; i++) {
-        //printf("non null\n");
-        //afficheJeu(parent->enfants[i]->etat);
-        //printf("fin %i\n",parent->enfants[i]->nb_simus);
+        if (parent->enfants[i] != NULL) {
+            //si c'est le tour du joueur on souhaite prévoir le meilleur cas
+            if (parent->etat->joueur == 1) {
+                B = ((float) parent->enfants[i]->nb_victoires / parent->enfants[i]->nb_simus) +
+                    1.414 * (sqrt(log((double) parent->nb_simus) / parent->enfants[i]->nb_simus));
+            }
 
-        //si c'est le tour du joueur on souhaite prévoir le meilleur casA
-        if (parent->etat->joueur == 1) {
-            B = ((float) parent->enfants[i]->nb_victoires / parent->enfants[i]->nb_simus) +
-                1.414 * (sqrt(log((double) parent->nb_simus) / parent->enfants[i]->nb_simus));
+                // si c'est le tour de l'ordinateur on souhaite prévoir le pire cas
+            else {
+                B = -(((float) parent->enfants[i]->nb_victoires / parent->enfants[i]->nb_simus) +
+                      1.414 * (sqrt(log(parent->nb_simus) / parent->enfants[i]->nb_simus)));
+            }
+            if (B > maximum) {
+                maximum = B;
+                enfant = parent->enfants[i];
+            }
         }
-
-            // si c'est le tour de l'ordinateur on souhaite prévoir le pire cas
-        else {
-            B = -(((float) parent->enfants[i]->nb_victoires / parent->enfants[i]->nb_simus) +
-                  1.414 * (sqrt(log(parent->nb_simus) / parent->enfants[i]->nb_simus)));
-        }
-        if (B > maximum) {
-            maximum = B;
-            enfant = i;}
     }
-    return selectionner_noeud(parent->enfants[enfant]);
+    return selectionner_noeud(enfant);
 }
 
 Noeud *developper(Noeud *noeud) {
+    int random;
+
     if (testFin(noeud->etat) != NON) {
         return noeud;
     } else {
+        Coup **coups = coups_possibles(noeud->etat);
 
-        int random = rand() % nb_coup_possibles(noeud->etat);
-        while (noeud->enfants[random] != NULL){
-            random = rand() % nb_coup_possibles(noeud->etat);
-        }
-        Coup * coup_choisi = nouveauCoup(random);
-        ajouterEnfant(noeud,coup_choisi);
+        do {
+            do {
+                random = rand() % NBCOL;
+            } while (coups[random] == NULL);
+
+        } while (noeud->enfants[random] != NULL || noeud->etat->plateau[0][random] != ' ');
+
+        ajouterEnfant(noeud, coups[random]);
         return noeud->enfants[random];
     }
 }
@@ -384,18 +385,19 @@ void mise_a_jour(Noeud *choisi, FinDePartie fin) {
 Coup *meilleur_coup(Noeud *noeud) {
     int meilleur_colonne = 0;
     float max = 0;
+    Coup *c = NULL;
     for (int i = 0; i < NBCOL; i++) {
-        if (noeud->enfants[i] != NULL){
+        if (noeud->enfants[i] != NULL) {
             printf("enfant %i taux victoire %0.3f simus %i\n", i,
                    (float) noeud->enfants[i]->nb_victoires / noeud->enfants[i]->nb_simus, noeud->enfants[i]->nb_simus);
-            afficheJeu(noeud->enfants[i]->etat);
-            if (max < (float) noeud->enfants[i]->nb_victoires / noeud->enfants[i]->nb_simus) {
+            //afficheJeu(noeud->enfants[i]->etat);
+            if (max <= (float) noeud->enfants[i]->nb_victoires / noeud->enfants[i]->nb_simus) {
                 max = (float) noeud->enfants[i]->nb_victoires / noeud->enfants[i]->nb_simus;
-                meilleur_colonne = i;
+                c = noeud->enfants[i]->coup;
             }
         }
     }
-    Coup * c = nouveauCoup(meilleur_colonne);
+
     printf("taux de vistoire :%0.3f\n", max);
     return c;
 }
@@ -412,15 +414,20 @@ void ordijoue_mcts(Etat *etat, int tempsmax) {
     Noeud *racine = nouveauNoeud(NULL, NULL);
     racine->etat = copieEtat(etat);
 
+
     int iter = 0;
+    FinDePartie fin;
 
     do {
-        //afficheJeu(n->etat);
-        Noeud * enfant = developper(selectionner_noeud(racine));
+        Noeud *n = selectionner_noeud(racine);
+
+        Noeud *enfant = developper(n);
 
         Etat *copie = copieEtat(enfant->etat);
 
-        mise_a_jour(enfant, simuler(copie));
+        fin = simuler(copie);
+
+        mise_a_jour(enfant, fin);
 
         free(copie);
 
@@ -436,10 +443,12 @@ void ordijoue_mcts(Etat *etat, int tempsmax) {
 
     Coup *c = meilleur_coup(racine);
 
+
     // Jouer le meilleur premier coup
     jouerCoup(etat, c);
+
     // Penser à libérer la mémoire :
-    //freeNoeud(racine);
+    freeNoeud(racine);
 }
 
 int main(void) {
